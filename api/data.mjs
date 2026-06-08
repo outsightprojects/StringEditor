@@ -1,12 +1,10 @@
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-
-function readLocale(language) {
-  return JSON.parse(readFileSync(join(ROOT, "locales", `${language}.json`), "utf8"));
-}
+const LOCALES = {
+  en: JSON.parse(readFileSync(new URL("../locales/en.json", import.meta.url), "utf8")),
+  de: JSON.parse(readFileSync(new URL("../locales/de.json", import.meta.url), "utf8")),
+  fr: JSON.parse(readFileSync(new URL("../locales/fr.json", import.meta.url), "utf8"))
+};
 
 function json(payload, init = {}) {
   return Response.json(payload, {
@@ -23,11 +21,7 @@ export function GET() {
     sourceLanguage: "en",
     targetLanguages: ["de", "fr"],
     persistence: "browser",
-    locales: {
-      en: readLocale("en"),
-      de: readLocale("de"),
-      fr: readLocale("fr")
-    },
+    locales: LOCALES,
     state: {
       version: 1,
       updatedAt: null,

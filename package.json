@@ -5,6 +5,7 @@
   "description": "Local review and editing tool for MusicBash locale JSON files.",
   "scripts": {
     "start": "node server.js",
+    "build": "node scripts/build-vercel.js",
     "build:hosted": "node scripts/build-hosted.js"
   }
 }

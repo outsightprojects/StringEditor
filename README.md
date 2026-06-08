@@ -64,9 +64,9 @@ This repo can be imported directly into Vercel from GitHub.
 2. In Vercel, choose `Add New Project` and import the GitHub repo.
 3. Use the default project root.
 4. Use the `Other` framework preset if Vercel asks.
-5. Leave the build command empty.
+5. Vercel will use `npm run build` and serve the `build` output directory from `vercel.json`.
 6. Deploy.
 
-Vercel serves `index.html`, `app.js`, and `styles.css` as static files. The `/api/data` function loads the committed locale JSON files and tells the app to use browser-local save state.
+Vercel serves `index.html`, `app.js`, and `styles.css` from the generated `build` directory. The `/api/data` function loads the committed locale JSON files and tells the app to use browser-local save state.
 
 When you update `locales/en.json`, `locales/de.json`, or `locales/fr.json`, commit and push the change to GitHub. Vercel will redeploy the latest source files.
