@@ -191,6 +191,52 @@ button:disabled {
   gap: 8px;
 }
 
+.save-actions button:last-child {
+  grid-column: 1 / -1;
+}
+
+.file-input {
+  display: none;
+}
+
+.unlock-panel {
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  padding: 10px;
+  margin-bottom: 12px;
+}
+
+.unlock-panel label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.unlock-panel p {
+  margin: 0;
+}
+
+.unlock-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.unlock-row input {
+  min-width: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  padding: 7px 9px;
+}
+
+.unlock-panel.is-unlocked {
+  color: var(--good);
+  font-weight: 700;
+}
+
 .primary {
   border-color: var(--accent);
   background: var(--accent);
@@ -375,6 +421,11 @@ button:disabled {
 .status-final {
   background: #e4f4ea;
   color: var(--good);
+}
+
+.status-base_string {
+  background: #eef3f9;
+  color: var(--info);
 }
 
 .status-needs_review,

@@ -4,7 +4,7 @@ const path = require("node:path");
 const ROOT = path.join(__dirname, "..");
 const BUILD_DIR = path.join(ROOT, "build");
 
-const STATIC_FILES = ["index.html", "app.js", "styles.css"];
+const STATIC_FILES = ["index.html", "app.js", "styles.css", "workbench-utils.mjs"];
 
 async function copyIfExists(source, destination) {
   try {

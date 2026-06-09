@@ -1,4 +1,10 @@
+import {
+  canEditLanguage,
+  parseUploadedLocaleFile
+} from "./workbench-utils.mjs";
+
 const STATUS_META = {
+  base_string: { label: "Base string", className: "status-base_string" },
   final: { label: "Final", className: "status-final" },
   needs_review: { label: "Needs review", className: "status-needs_review" },
   same_as_source: { label: "Same as EN", className: "status-same_as_source" },
@@ -22,12 +28,16 @@ const FILTERS = [
 
 const LOCAL_DRAFT_KEY = "musicbash.translationWorkbench.draft.v3";
 const LOCAL_SAVED_KEY = "musicbash.translationWorkbench.saved.v3";
+const BASE_UNLOCK_KEY = "musicbash.translationWorkbench.baseUnlocked.v1";
 
 const app = {
   sourceLanguage: "en",
   targetLanguages: [],
+  languages: [],
   activeLanguage: "de",
   persistence: "server",
+  baseUnlocked: sessionStorage.getItem(BASE_UNLOCK_KEY) === "true",
+  unlockMessage: "English base strings are locked.",
   locales: {},
   state: { version: 1, updatedAt: null, languages: {} },
   flatCache: {},
@@ -55,6 +65,7 @@ async function init() {
     const payload = await response.json();
     app.sourceLanguage = payload.sourceLanguage;
     app.targetLanguages = payload.targetLanguages;
+    app.languages = [app.sourceLanguage, ...app.targetLanguages];
     app.activeLanguage = app.targetLanguages[0];
     app.persistence = payload.persistence || "server";
     app.locales = payload.locales;
@@ -172,7 +183,7 @@ function rebuildCaches() {
   );
 
   app.rowsByLanguage = Object.fromEntries(
-    app.targetLanguages.map((language) => [language, buildRows(language)])
+    app.languages.map((language) => [language, buildRows(language)])
   );
 }
 
@@ -220,11 +231,13 @@ function buildRows(language) {
     const entry = readEntry(language, key);
     const sourceTokens = extractTokens(source || "");
     const targetTokens = extractTokens(target || "");
-    const tokenMismatch = !sameTokenList(sourceTokens, targetTokens);
+    const isSourceLanguage = language === app.sourceLanguage;
+    const tokenMismatch = !isSourceLanguage && !sameTokenList(sourceTokens, targetTokens);
     const missing = !targetExists;
     const empty = targetExists && target.trim() === "";
     const extra = source === undefined && targetExists;
-    const sameAsSource = targetExists && source !== undefined && target === source && target.trim() !== "";
+    const sameAsSource =
+      !isSourceLanguage && targetExists && source !== undefined && target === source && target.trim() !== "";
     const blocking = missing || empty || tokenMismatch;
     const status = computeStatus({
       entry,
@@ -261,6 +274,7 @@ function computeStatus({ entry, missing, empty, tokenMismatch, extra, sameAsSour
   if (empty) return "empty";
   if (tokenMismatch) return "placeholder_issue";
   if (extra) return "extra_key";
+  if (entry.status === "base_string") return "base_string";
   if (entry.status === "final") return "final";
   if (sameAsSource) return "same_as_source";
   return "needs_review";
@@ -276,10 +290,16 @@ function sameTokenList(left, right) {
 }
 
 function readEntry(language, key) {
+  if (language === app.sourceLanguage) {
+    return { status: "base_string", note: "" };
+  }
   return app.state.languages[language]?.[key] || { status: "needs_review", note: "" };
 }
 
 function ensureEntry(language, key) {
+  if (language === app.sourceLanguage) {
+    return { status: "base_string", note: "" };
+  }
   app.state.languages[language] ||= {};
   app.state.languages[language][key] ||= { status: "needs_review", note: "" };
   return app.state.languages[language][key];
@@ -307,6 +327,7 @@ function statsFor(language) {
     empty: 0,
     placeholder_issue: 0,
     extra_key: 0,
+    base_string: 0,
     blocking: 0
   };
 
@@ -381,13 +402,16 @@ function render() {
           <p>Review MusicBash locale JSON by key, language, and completion status.</p>
         </div>
         <div class="language-stack">
-          ${app.targetLanguages.map(renderLanguageCard).join("")}
+          ${app.languages.map(renderLanguageCard).join("")}
         </div>
         <div class="save-panel">
+          ${renderUnlockPanel()}
           <div class="save-actions">
             <button class="primary" data-action="save-all">Save all</button>
-            <button data-action="download-language">Download ${app.activeLanguage.toUpperCase()}</button>
+            <button data-action="download-language" ${canDownloadActiveLanguage() ? "" : "disabled"}>Download ${app.activeLanguage.toUpperCase()}</button>
+            <button data-action="open-upload">Upload JSON</button>
           </div>
+          <input class="file-input" type="file" accept="application/json,.json" multiple data-role="upload-input">
           <p>${escapeHtml(app.saveMessage)}</p>
           <p>${renderSaveScope()}</p>
         </div>
@@ -395,14 +419,14 @@ function render() {
       <main class="main">
         <div class="main-header">
           <div>
-            <h2>${app.activeLanguage.toUpperCase()} review</h2>
+            <h2>${app.activeLanguage === app.sourceLanguage ? "EN base" : `${app.activeLanguage.toUpperCase()} review`}</h2>
             <p>${visibleRows.length} visible of ${activeStats.total} strings.</p>
           </div>
           <div class="status-strip">
             ${renderStatChip("Final", activeStats.final)}
             ${renderStatChip("Blocking", activeStats.blocking)}
             ${renderStatChip("Same as EN", activeStats.same_as_source)}
-            ${renderStatChip("Needs review", activeStats.needs_review)}
+            ${app.activeLanguage === app.sourceLanguage ? renderStatChip("Base strings", activeStats.base_string) : renderStatChip("Needs review", activeStats.needs_review)}
           </div>
         </div>
         <div class="toolbar">
@@ -426,30 +450,63 @@ function render() {
   bindEvents();
 }
 
+function renderUnlockPanel() {
+  if (app.activeLanguage !== app.sourceLanguage) {
+    return "";
+  }
+
+  if (app.baseUnlocked) {
+    return `<div class="unlock-panel is-unlocked">EN editing unlocked for this session.</div>`;
+  }
+
+  return `
+    <div class="unlock-panel">
+      <label for="basePassword">Unlock EN base editing</label>
+      <div class="unlock-row">
+        <input id="basePassword" type="password" autocomplete="current-password" placeholder="Password">
+        <button data-action="unlock-base">Unlock</button>
+      </div>
+      <p>${escapeHtml(app.unlockMessage)}</p>
+    </div>
+  `;
+}
+
+function canDownloadActiveLanguage() {
+  return app.activeLanguage !== app.sourceLanguage || app.baseUnlocked;
+}
+
 function renderSaveScope() {
   if (app.persistence === "browser") {
     return "Online saves stay in this browser. Use downloads to share edited JSON files.";
   }
 
-  return "Saved changes update <code>locales/de.json</code>, <code>locales/fr.json</code>, and <code>translation-state.json</code>.";
+  return "Saved changes update <code>locales/en.json</code>, <code>locales/de.json</code>, <code>locales/fr.json</code>, and <code>translation-state.json</code>.";
 }
 
 function renderLanguageCard(language) {
   const stats = statsFor(language);
+  const isSource = language === app.sourceLanguage;
   return `
     <button class="language-card ${language === app.activeLanguage ? "is-active" : ""}" data-action="switch-language" data-language="${language}">
       <div class="language-card-title">
         <strong>${language.toUpperCase()}</strong>
-        <span>${stats.percent}% final</span>
+        <span>${isSource ? (app.baseUnlocked ? "unlocked" : "locked") : `${stats.percent}% final`}</span>
       </div>
       <div class="progress-track">
-        <div class="progress-fill" style="--progress: ${stats.percent}%"></div>
+        <div class="progress-fill" style="--progress: ${isSource ? 100 : stats.percent}%"></div>
       </div>
       <div class="metric-grid">
-        <div class="metric"><strong>${stats.final}</strong><span>final</span></div>
-        <div class="metric"><strong>${stats.blocking}</strong><span>blocking</span></div>
-        <div class="metric"><strong>${stats.same_as_source}</strong><span>same as EN</span></div>
-        <div class="metric"><strong>${stats.needs_review}</strong><span>review</span></div>
+        ${isSource ? `
+          <div class="metric"><strong>${stats.total}</strong><span>base strings</span></div>
+          <div class="metric"><strong>${stats.empty}</strong><span>empty</span></div>
+          <div class="metric"><strong>${app.baseUnlocked ? "Yes" : "No"}</strong><span>editable</span></div>
+          <div class="metric"><strong>EN</strong><span>source</span></div>
+        ` : `
+          <div class="metric"><strong>${stats.final}</strong><span>final</span></div>
+          <div class="metric"><strong>${stats.blocking}</strong><span>blocking</span></div>
+          <div class="metric"><strong>${stats.same_as_source}</strong><span>same as EN</span></div>
+          <div class="metric"><strong>${stats.needs_review}</strong><span>review</span></div>
+        `}
       </div>
     </button>
   `;
@@ -508,7 +565,9 @@ function renderPreview(value, missing) {
 function renderInspector(row) {
   const entry = readEntry(app.activeLanguage, row.key);
   const issues = issuesFor(row);
-  const canMarkFinal = !row.blocking;
+  const isSource = app.activeLanguage === app.sourceLanguage;
+  const editable = canEditLanguage(app.activeLanguage, app.baseUnlocked);
+  const canMarkFinal = !isSource && !row.blocking;
 
   return `
     <div class="editor-key">
@@ -521,23 +580,24 @@ function renderInspector(row) {
       ${renderTokens("Source placeholders", row.sourceTokens)}
     </div>
     <div class="field">
-      <label for="targetText">${app.activeLanguage.toUpperCase()} translation</label>
-      <textarea id="targetText" data-action="edit-target">${escapeHtml(row.target)}</textarea>
+      <label for="targetText">${isSource ? "EN base string" : `${app.activeLanguage.toUpperCase()} translation`}</label>
+      <textarea id="targetText" data-action="edit-target" ${editable ? "" : "disabled"}>${escapeHtml(row.target)}</textarea>
       ${renderTokens("Target placeholders", row.targetTokens)}
     </div>
+    ${!editable ? `<div class="issue-list"><div class="issue blocking">Unlock EN editing with the password before changing base strings.</div></div>` : ""}
     ${issues.length ? `<div class="issue-list">${issues.join("")}</div>` : ""}
-    <label class="final-toggle">
+    ${isSource ? "" : `<label class="final-toggle">
       <input type="checkbox" data-action="toggle-final" ${row.isFinal ? "checked" : ""} ${canMarkFinal ? "" : "disabled"}>
       <span>Mark this string as final</span>
-    </label>
+    </label>`}
     <div class="editor-actions">
       <button data-action="copy-source">Copy English</button>
-      <button data-action="mark-needs-review">Needs review</button>
+      ${isSource ? "" : `<button data-action="mark-needs-review">Needs review</button>`}
     </div>
-    <div class="field">
+    ${isSource ? "" : `<div class="field">
       <label for="noteText">Review note</label>
       <textarea id="noteText" class="note-input" data-action="edit-note" placeholder="Optional translator note">${escapeHtml(entry.note || "")}</textarea>
-    </div>
+    </div>`}
   `;
 }
 
@@ -617,6 +677,7 @@ function bindEvents() {
 
   root.querySelector("[data-action='edit-note']")?.addEventListener("input", handleNoteInput);
   root.querySelector("[data-action='toggle-final']")?.addEventListener("change", handleFinalToggle);
+  root.querySelector("[data-role='upload-input']")?.addEventListener("change", handleUploadInput);
 }
 
 function handleClick(event) {
@@ -648,7 +709,22 @@ function handleClick(event) {
   }
 
   if (action === "download-language") {
+    if (!canDownloadActiveLanguage()) {
+      app.saveMessage = "Unlock EN before downloading the base strings.";
+      render();
+      return;
+    }
     downloadLanguage(app.activeLanguage);
+    return;
+  }
+
+  if (action === "open-upload") {
+    root.querySelector("[data-role='upload-input']")?.click();
+    return;
+  }
+
+  if (action === "unlock-base") {
+    unlockBaseEditing();
     return;
   }
 
@@ -674,10 +750,17 @@ function handleTargetInput(event) {
 }
 
 function updateTarget(value) {
+  if (!canEditLanguage(app.activeLanguage, app.baseUnlocked)) {
+    app.saveMessage = "Unlock EN before editing base strings.";
+    render();
+    return;
+  }
   setNestedValue(app.locales[app.activeLanguage], app.selectedKey, value);
-  const entry = ensureEntry(app.activeLanguage, app.selectedKey);
-  if (entry.status === "final") {
-    entry.status = "needs_review";
+  if (app.activeLanguage !== app.sourceLanguage) {
+    const entry = ensureEntry(app.activeLanguage, app.selectedKey);
+    if (entry.status === "final") {
+      entry.status = "needs_review";
+    }
   }
   markDirty("Unsaved translation changes");
 }
@@ -729,7 +812,7 @@ async function saveAll() {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        locales: Object.fromEntries(app.targetLanguages.map((language) => [language, app.locales[language]])),
+        locales: Object.fromEntries(app.languages.map((language) => [language, app.locales[language]])),
         state: app.state
       })
     });
@@ -752,6 +835,79 @@ async function saveAll() {
     saveDraft();
     render();
   }
+}
+
+async function unlockBaseEditing() {
+  const passwordInput = root.querySelector("#basePassword");
+  const password = passwordInput?.value || "";
+  app.unlockMessage = "Checking password...";
+  render();
+
+  try {
+    const response = await fetch("/api/unlock-base", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password })
+    });
+    const body = await response.json().catch(() => ({}));
+
+    if (!response.ok || !body.unlocked) {
+      throw new Error(body.error || "Incorrect password.");
+    }
+
+    app.baseUnlocked = true;
+    sessionStorage.setItem(BASE_UNLOCK_KEY, "true");
+    app.unlockMessage = "EN editing unlocked.";
+    app.saveMessage = "EN editing unlocked for this browser session";
+    rebuildCaches();
+    render();
+  } catch (error) {
+    app.baseUnlocked = false;
+    sessionStorage.removeItem(BASE_UNLOCK_KEY);
+    app.unlockMessage = error.message;
+    app.saveMessage = error.message;
+    render();
+  }
+}
+
+async function handleUploadInput(event) {
+  const files = Array.from(event.target.files || []);
+  if (!files.length) {
+    return;
+  }
+
+  const uploaded = [];
+  const errors = [];
+
+  for (const file of files) {
+    try {
+      const parsed = parseUploadedLocaleFile(file.name, await file.text(), app.languages);
+      if (parsed.language === app.sourceLanguage && !app.baseUnlocked) {
+        throw new Error("Unlock EN before uploading English base strings.");
+      }
+      app.locales[parsed.language] = parsed.locale;
+      if (app.state.languages[parsed.language]) {
+        app.state.languages[parsed.language] = {};
+      }
+      uploaded.push(parsed.language.toUpperCase());
+    } catch (error) {
+      errors.push(`${file.name}: ${error.message}`);
+    }
+  }
+
+  event.target.value = "";
+
+  if (uploaded.length) {
+    rebuildCaches();
+    app.selectedKey = null;
+    markDirty(`Uploaded ${uploaded.join(", ")} JSON`);
+  }
+
+  if (errors.length) {
+    app.saveMessage = errors.join(" ");
+  }
+
+  render();
 }
 
 function downloadLanguage(language) {

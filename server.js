@@ -16,6 +16,7 @@ const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".md": "text/markdown; charset=utf-8"
 };
@@ -132,13 +133,36 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/api/unlock-base") {
+    const configuredPassword = process.env.BASE_EDIT_PASSWORD;
+    if (!configuredPassword) {
+      sendJson(res, 503, {
+        unlocked: false,
+        error: "BASE_EDIT_PASSWORD is not configured."
+      });
+      return;
+    }
+
+    const payload = JSON.parse(await readBody(req));
+    if (payload.password !== configuredPassword) {
+      sendJson(res, 401, {
+        unlocked: false,
+        error: "Incorrect password."
+      });
+      return;
+    }
+
+    sendJson(res, 200, { unlocked: true });
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/save") {
     const payload = JSON.parse(await readBody(req));
     assertObject(payload, "Save payload");
     assertObject(payload.locales, "locales");
 
     const writes = [];
-    for (const language of TARGET_LANGUAGES) {
+    for (const language of ALL_LANGUAGES) {
       assertObject(payload.locales[language], `${language}.json`);
       writes.push(writeJsonAtomic(path.join(LOCALE_DIR, `${language}.json`), payload.locales[language]));
     }

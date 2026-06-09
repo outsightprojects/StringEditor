@@ -8,7 +8,8 @@ const MIME_TYPES = {
   "/": "text/html; charset=utf-8",
   "/index.html": "text/html; charset=utf-8",
   "/styles.css": "text/css; charset=utf-8",
-  "/app.js": "text/javascript; charset=utf-8"
+  "/app.js": "text/javascript; charset=utf-8",
+  "/workbench-utils.mjs": "text/javascript; charset=utf-8"
 };
 
 async function readText(relativePath) {
@@ -17,6 +18,17 @@ async function readText(relativePath) {
 
 async function readJson(relativePath) {
   return JSON.parse(await readText(relativePath));
+}
+
+async function readOptionalText(relativePath, fallback) {
+  try {
+    return await readText(relativePath);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return fallback;
+    }
+    throw error;
+  }
 }
 
 async function main() {
@@ -28,7 +40,8 @@ async function main() {
   const indexHtml = await readText("index.html");
   const styles = await readText("styles.css");
   const appJs = await readText("app.js");
-  const hosting = await readText(".openai/hosting.json");
+  const workbenchUtils = await readText("workbench-utils.mjs");
+  const hosting = await readOptionalText(".openai/hosting.json", "{\n  \"d1\": null,\n  \"r2\": null\n}\n");
   const locales = {
     en: await readJson("locales/en.json"),
     de: await readJson("locales/de.json"),
@@ -39,7 +52,8 @@ async function main() {
     "/": indexHtml,
     "/index.html": indexHtml,
     "/styles.css": styles,
-    "/app.js": appJs
+    "/app.js": appJs,
+    "/workbench-utils.mjs": workbenchUtils
   })};
 
 const MIME_TYPES = ${JSON.stringify(MIME_TYPES)};
