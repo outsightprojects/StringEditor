@@ -1,5 +1,7 @@
 import {
   canEditLanguage,
+  createLocaleBundleSignature,
+  isStoredBundleCompatible,
   parseUploadedLocaleFile
 } from "./workbench-utils.mjs";
 
@@ -39,6 +41,7 @@ const app = {
   baseUnlocked: sessionStorage.getItem(BASE_UNLOCK_KEY) === "true",
   unlockMessage: "English base strings are locked.",
   locales: {},
+  dataSignature: "",
   state: { version: 1, updatedAt: null, languages: {} },
   flatCache: {},
   rowsByLanguage: {},
@@ -69,6 +72,7 @@ async function init() {
     app.activeLanguage = app.targetLanguages[0];
     app.persistence = payload.persistence || "server";
     app.locales = payload.locales;
+    app.dataSignature = createLocaleBundleSignature(payload.locales, app.languages);
     app.state = normalizeState(payload.state);
 
     restoreSavedState();
@@ -121,6 +125,12 @@ function restoreDraft() {
     }
 
     if (draft.locales && draft.state) {
+      if (!isStoredBundleCompatible(draft, app.dataSignature)) {
+        localStorage.removeItem(LOCAL_DRAFT_KEY);
+        app.saveMessage = "Ignored stale browser draft after locale update";
+        return;
+      }
+
       app.locales = draft.locales;
       app.state = normalizeState(draft.state);
       app.dirty = true;
@@ -144,6 +154,12 @@ function restoreSavedState() {
   try {
     const saved = JSON.parse(raw);
     if (saved?.locales && saved?.state) {
+      if (!isStoredBundleCompatible(saved, app.dataSignature)) {
+        localStorage.removeItem(LOCAL_SAVED_KEY);
+        app.saveMessage = "Ignored stale browser save after locale update";
+        return;
+      }
+
       app.locales = saved.locales;
       app.state = normalizeState(saved.state);
       app.saveMessage = saved.savedAt
@@ -160,6 +176,7 @@ function saveDraft() {
     LOCAL_DRAFT_KEY,
     JSON.stringify({
       dirty: app.dirty,
+      dataSignature: app.dataSignature,
       locales: app.locales,
       state: app.state
     })
@@ -171,6 +188,7 @@ function saveBrowserState(savedAt) {
     LOCAL_SAVED_KEY,
     JSON.stringify({
       savedAt,
+      dataSignature: app.dataSignature,
       locales: app.locales,
       state: app.state
     })

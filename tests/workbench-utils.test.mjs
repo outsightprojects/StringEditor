@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
   canEditLanguage,
+  createLocaleBundleSignature,
+  isStoredBundleCompatible,
   parseUploadedLocaleFile,
   resolveUploadedLanguage
 } from "../workbench-utils.mjs";
@@ -39,4 +41,32 @@ test("canEditLanguage keeps English locked unless base editing is unlocked", () 
   assert.equal(canEditLanguage("fr", false), true);
   assert.equal(canEditLanguage("en", false), false);
   assert.equal(canEditLanguage("en", true), true);
+});
+
+test("createLocaleBundleSignature is stable across object key order", () => {
+  const left = {
+    en: { notifications: { follow: "Follow", daily: ["A", "B"] } },
+    de: { notifications: { follow: "Folgen" } }
+  };
+  const right = {
+    de: { notifications: { follow: "Folgen" } },
+    en: { notifications: { daily: ["A", "B"], follow: "Follow" } }
+  };
+
+  assert.equal(createLocaleBundleSignature(left, supportedLanguages), createLocaleBundleSignature(right, supportedLanguages));
+});
+
+test("isStoredBundleCompatible rejects old browser saves without the current dataset signature", () => {
+  const currentSignature = createLocaleBundleSignature(
+    {
+      en: { notifications: { follow: "Follow" } },
+      de: { notifications: { follow: "Folgen" } },
+      fr: { notifications: { follow: "Suivre" } }
+    },
+    supportedLanguages
+  );
+
+  assert.equal(isStoredBundleCompatible({ locales: {}, state: {} }, currentSignature), false);
+  assert.equal(isStoredBundleCompatible({ dataSignature: "old", locales: {}, state: {} }, currentSignature), false);
+  assert.equal(isStoredBundleCompatible({ dataSignature: currentSignature, locales: {}, state: {} }, currentSignature), true);
 });
